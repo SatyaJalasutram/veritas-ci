@@ -1,0 +1,36 @@
+# Copyright 2026 Veritas
+# SPDX-License-Identifier: Apache-2.0
+# Pushing a tag vX.Y.Z tests that commit, publishes a GitHub release for it,
+# and moves the major tag (v0 for 0.x) to it, so `@v0` always means the
+# latest 0.x release.
+name: Release
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyyaml  # test_action.py reads action.yml; the CLI itself needs nothing
+      - run: python -m unittest discover -s tests -v
+      - name: The tag matches the CLI's version
+        run: |
+          version="$(python3 -c 'import veritas_ci; print(veritas_ci.__version__)')"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME but veritas_ci.__version__ is $version"; exit 1; }
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      - name: Move the major tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"

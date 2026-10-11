@@ -1,0 +1,19 @@
+[project]
+name = "veritas-ci"
+version = "0.1.0"
+description = "Run an agent's Veritas tests from CI and gate on the result."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+veritas = "veritas_ci:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["veritas_ci"]

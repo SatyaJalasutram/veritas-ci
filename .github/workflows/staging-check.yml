@@ -1,0 +1,33 @@
+# Copyright 2026 Veritas
+# SPDX-License-Identifier: Apache-2.0
+# Runs this Action, as published, against a Veritas deployment: the check that
+# it works on real GitHub (CI-04). Started by hand (Actions > Staging check >
+# Run workflow), never on a schedule. Needs three repository secrets, set by
+# the owner: VERITAS_API_KEY, VERITAS_API_URL, VERITAS_AGENT_ID.
+name: Staging check
+on:
+  workflow_dispatch:
+    inputs:
+      invoke-url:
+        description: Test this deployment instead of the agent's saved address (optional).
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: veritas
+        uses: ./
+        with:
+          api-key: ${{ secrets.VERITAS_API_KEY }}
+          api-url: ${{ secrets.VERITAS_API_URL }}
+          agent-id: ${{ secrets.VERITAS_AGENT_ID }}
+          invoke-url: ${{ inputs.invoke-url }}
+          comment: 'false'
+      - if: always()
+        env:
+          VERDICT: ${{ steps.veritas.outputs.verdict }}
+        run: echo "Verdict: $VERDICT"

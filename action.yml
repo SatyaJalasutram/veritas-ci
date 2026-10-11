@@ -1,0 +1,111 @@
+# Copyright 2026 Veritas
+# SPDX-License-Identifier: Apache-2.0
+name: Veritas agent tests
+description: >
+  Runs an agent's Veritas tests (its current Blueprint) against a deployment,
+  fails the job if any test case fails, and posts the result on the pull request.
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  api-key:
+    description: A Veritas API key (Settings > API keys). Pass it from a secret, never inline.
+    required: true
+  api-url:
+    description: Your Veritas address, e.g. https://veritas.example.com.
+    required: true
+  agent-id:
+    description: The id of the agent to test (it's in the agent's page URL in Veritas).
+    required: true
+  invoke-url:
+    description: >
+      Test this deployment instead of the agent's saved address, e.g. the pull request's
+      preview. It must be reachable from the internet.
+    required: false
+    default: ""
+  timeout-seconds:
+    description: How long to wait for the run before giving up (the job then errors).
+    required: false
+    default: "1800"
+  comment:
+    description: Post (or update) a comment on the pull request with the result.
+    required: false
+    default: "true"
+  github-token:
+    description: >
+      Token for the pull request comment. The workflow's own GITHUB_TOKEN is enough (it needs
+      pull-requests: write). Veritas never sees it.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  verdict:
+    description: pass, fail or error.
+    value: ${{ steps.run.outputs.verdict }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        VERITAS_API_KEY: ${{ inputs.api-key }}
+        VERITAS_API_URL: ${{ inputs.api-url }}
+        VERITAS_AGENT_ID: ${{ inputs.agent-id }}
+        VERITAS_INVOKE_URL: ${{ inputs.invoke-url }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+      run: |
+        # Secrets are masked already; this also masks a key passed some other way.
+        echo "::add-mask::$VERITAS_API_KEY"
+        set +e
+        python3 "$GITHUB_ACTION_PATH/veritas_ci.py" run --timeout "$TIMEOUT_SECONDS" \
+          --summary-file "$RUNNER_TEMP/veritas-summary.md"
+        code=$?
+        set -e
+        case "$code" in
+          0) verdict=pass ;;
+          1) verdict=fail ;;
+          *) verdict=error ;;
+        esac
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+
+    - name: Comment on the pull request
+      if: ${{ always() && inputs.comment == 'true' && github.event.pull_request.number }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        AGENT_ID: ${{ inputs.agent-id }}
+      run: |
+        summary="$RUNNER_TEMP/veritas-summary.md"
+        if [ ! -s "$summary" ]; then
+          echo "No result to post (the run didn't start; see the step above)."
+          exit 0
+        fi
+        # The comment is a convenience; the job's exit code is the gate. A
+        # token that can't comment (a fork's pull request is read-only)
+        # leaves a warning, not a failed job.
+        agent_id="${AGENT_ID,,}"
+        if [[ ! "$agent_id" =~ ^[0-9a-f-]+$ ]]; then
+          echo "::warning::agent-id isn't a Veritas agent id; not commenting."
+          exit 0
+        fi
+        marker="<!-- veritas-ci:$agent_id -->"
+        existing=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" 2>/dev/null | head -n1) || existing=""
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" -F "body=@$summary" >/dev/null \
+            || echo "::warning::Couldn't update the Veritas comment on this pull request."
+        else
+          gh api -X POST "repos/$REPO/issues/$PR/comments" -F "body=@$summary" >/dev/null \
+            || echo "::warning::Couldn't comment on this pull request (the token may be read-only, as on a fork)."
+        fi
+
+    - name: Gate
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.code }}
+      run: exit "${CODE:-2}"
