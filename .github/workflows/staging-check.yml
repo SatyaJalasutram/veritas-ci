@@ -30,4 +30,5 @@ jobs:
       - if: always()
         env:
           VERDICT: ${{ steps.veritas.outputs.verdict }}
-        run: echo "Verdict: $VERDICT"
+        run: |
+          echo "Verdict: $VERDICT"
