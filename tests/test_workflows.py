@@ -27,6 +27,15 @@ class WorkflowFilesTest(unittest.TestCase):
                     for step in job.get("steps", []):
                         self.assertIsInstance(step.get("run", ""), str)
 
+    def test_a_release_works_from_a_pushed_tag_or_a_release_published_on_github(self):
+        release = yaml.safe_load(WORKFLOWS[0].read_text())
+        triggers = release.get("on") or release.get(True)
+        self.assertEqual(triggers["push"]["tags"], ["v[0-9]+.[0-9]+.[0-9]+"])
+        self.assertEqual(triggers["release"]["types"], ["published"])
+        publish = next(s["run"] for s in release["jobs"]["release"]["steps"] if s.get("name") == "Publish the release")
+        # A release published on GitHub fires both events: creating it again would fail the run.
+        self.assertIn('gh release view "$GITHUB_REF_NAME"', publish)
+
 
 if __name__ == "__main__":
     unittest.main()
