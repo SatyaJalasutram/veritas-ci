@@ -5,9 +5,12 @@
 # published), and moves the major tag (v0 for 0.x) to it, so `@v0` always
 # means the latest 0.x release.
 #
-# Either way of releasing works: push the tag (`git tag v0.1.0 && git push
-# origin v0.1.0`), or publish a release on GitHub with a new tag. The second
-# fires both events below, so every step is safe to run twice.
+# Releases are immutable (owner, 22 Oct night): once published, a release's
+# assets can't change. So KEYS.md is attached as the release is created, in
+# the same call, and never uploaded to or replaced on an existing release.
+# Release by pushing the tag (`git tag v0.1.0 && git push origin v0.1.0`).
+# A release published by hand on GitHub has no KEYS.md and can't be given
+# one: the job says so and fails, rather than leave it silently without.
 name: Release
 on:
   push:
@@ -23,10 +26,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
       - name: The tag is a version, vX.Y.Z
@@ -38,14 +41,20 @@ jobs:
         run: |
           version="$(python3 -c 'import veritas_ci; print(veritas_ci.__version__)')"
           test "v$version" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME but veritas_ci.__version__ is $version"; exit 1; }
-      - name: Publish the release
+      # The evidence signing keys' fingerprints (KEYS.md) go out with every
+      # release, attached as it is created, so a reader can pin a key outside
+      # Veritas (docs/verify-a-report.md in the Veritas repository).
+      # tests/test_keys.py checked its format above.
+      - name: Publish the release, with KEYS.md
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME is already published."
+            gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -qx KEYS.md \
+              || { echo "::error::release $GITHUB_REF_NAME has no KEYS.md, and an immutable release can't be given one. Release by pushing the tag."; exit 1; }
           else
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+            gh release create "$GITHUB_REF_NAME" KEYS.md --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
           fi
       - name: Move the major tag
         run: |

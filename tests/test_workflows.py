@@ -32,9 +32,25 @@ class WorkflowFilesTest(unittest.TestCase):
         triggers = release.get("on") or release.get(True)
         self.assertEqual(triggers["push"]["tags"], ["v[0-9]+.[0-9]+.[0-9]+"])
         self.assertEqual(triggers["release"]["types"], ["published"])
-        publish = next(s["run"] for s in release["jobs"]["release"]["steps"] if s.get("name") == "Publish the release")
+        publish = next(s["run"] for s in release["jobs"]["release"]["steps"]
+                       if s.get("name") == "Publish the release, with KEYS.md")
         # A release published on GitHub fires both events: creating it again would fail the run.
         self.assertIn('gh release view "$GITHUB_REF_NAME"', publish)
+
+    def test_keys_md_is_attached_as_the_release_is_created_and_never_replaced(self):
+        # Releases are immutable (owner, 22 Oct night): no upload to, and no
+        # --clobber of, an existing release.
+        text = WORKFLOWS[0].read_text()
+        self.assertIn('gh release create "$GITHUB_REF_NAME" KEYS.md', text)
+        self.assertNotIn("--clobber", text)
+        self.assertNotIn("gh release upload", text)
+
+    def test_every_action_is_pinned_by_commit_sha(self):
+        for workflow in WORKFLOWS:
+            for line in workflow.read_text().splitlines():
+                if "uses:" in line and "uses: ./" not in line:
+                    with self.subTest(workflow=workflow.name, line=line.strip()):
+                        self.assertRegex(line, r"uses: [\w.-]+/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+")
 
 
 if __name__ == "__main__":
