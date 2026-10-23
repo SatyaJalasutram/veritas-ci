@@ -1,5 +1,8 @@
-# Dependabot (owner, 22 Oct night): weekly, one grouped PR per ecosystem,
-# security updates grouped the same way. This repository's Actions are
+# Dependabot (owner, 22 Oct night; groups 23 Oct): weekly. Per ecosystem,
+# minor and patch updates come as one grouped PR, and semver-major updates
+# as another of their own. Security updates are grouped separately and take
+# only minor and patch fixes; a fix that needs a major comes as its own PR,
+# never mixed into a group. This repository's Actions are
 # public, so its CI runs on these PRs as on any other.
 version: 2
 updates:
@@ -13,9 +16,15 @@ updates:
       github-actions:
         applies-to: version-updates
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      github-actions-major:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["major"]
       github-actions-security:
         applies-to: security-updates
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: pip
     directory: /
@@ -27,6 +36,12 @@ updates:
       pip:
         applies-to: version-updates
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      pip-major:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["major"]
       pip-security:
         applies-to: security-updates
         patterns: ["*"]
+        update-types: ["minor", "patch"]
