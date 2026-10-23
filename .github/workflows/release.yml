@@ -1,18 +1,31 @@
 # Copyright 2026 Veritas
 # SPDX-License-Identifier: Apache-2.0
-# A release vX.Y.Z: tests that commit, checks the tag matches the CLI's
-# version, publishes a GitHub release for it (unless one was already
-# published), and moves the major tag (v0 for 0.x) to it, so `@v0` always
-# means the latest 0.x release.
+# A release vX.Y.Z: tests that commit, checks the version matches the CLI's,
+# publishes a GitHub release for it with KEYS.md attached, and moves the
+# major tag (v0 for 0.x) to it, so `@v0` always means the latest 0.x release.
+#
+# Release by hand from the Actions tab (owner, 23 Oct): Actions -> Release ->
+# Run workflow, on main, with the version (v0.1.1). That one run refuses a
+# version that isn't vX.Y.Z or isn't veritas_ci.__version__, creates the tag
+# on main's head through the GitHub API, publishes the release with KEYS.md
+# and moves v0. (A tag created with the workflow's own token starts no
+# second run.) A pushed tag still releases the same way.
 #
 # Releases are immutable (owner, 22 Oct night): once published, a release's
 # assets can't change. So KEYS.md is attached as the release is created, in
 # the same call, and never uploaded to or replaced on an existing release.
-# Release by pushing the tag (`git tag v0.1.0 && git push origin v0.1.0`).
-# A release published by hand on GitHub has no KEYS.md and can't be given
-# one: the job says so and fails, rather than leave it silently without.
+# `gh release create` with an asset makes a draft, uploads, then publishes,
+# so a failed upload leaves an unpublished draft, never a release without
+# KEYS.md. A release published by hand on GitHub has no KEYS.md and can't be
+# given one: the job says so and fails, rather than leave it silently without.
 name: Release
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version to release, vX.Y.Z; it must be veritas_ci.__version__ on main'
+        required: true
+        type: string
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
   release:
@@ -20,12 +33,20 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.version || github.ref_name }}
   cancel-in-progress: false
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # The input only ever reaches a script through this variable, never
+      # pasted into one.
+      TAG: ${{ inputs.version || github.ref_name }}
     steps:
+      - name: A manual release runs on main
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          test "$GITHUB_REF" = refs/heads/main || { echo "::error::run the release on main, not $GITHUB_REF"; exit 1; }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
@@ -34,30 +55,44 @@ jobs:
           python-version: '3.11'
       - name: The tag is a version, vX.Y.Z
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$TAG is not vX.Y.Z"; exit 1; }
       - run: pip install pyyaml  # test_action.py reads action.yml; the CLI itself needs nothing
+      # tests/test_keys.py checks KEYS.md's format.
       - run: python -m unittest discover -s tests -v
       - name: The tag matches the CLI's version
         run: |
           version="$(python3 -c 'import veritas_ci; print(veritas_ci.__version__)')"
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME but veritas_ci.__version__ is $version"; exit 1; }
+          test "v$version" = "$TAG" || { echo "::error::version $TAG but veritas_ci.__version__ is $version"; exit 1; }
+          grep -qx "version = \"$version\"" pyproject.toml || { echo "::error::pyproject.toml's version is not $version"; exit 1; }
+      - name: KEYS.md is here to attach
+        run: |
+          test -s KEYS.md || { echo "::error::no KEYS.md: a release is never made without it"; exit 1; }
+      - name: Create the tag on main's head
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG already exists; a released version is never re-tagged"; exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" >/dev/null
+          echo "Tagged $TAG at $GITHUB_SHA (main's head)."
       # The evidence signing keys' fingerprints (KEYS.md) go out with every
       # release, attached as it is created, so a reader can pin a key outside
       # Veritas (docs/verify-a-report.md in the Veritas repository).
-      # tests/test_keys.py checked its format above.
       - name: Publish the release, with KEYS.md
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME is already published."
-            gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -qx KEYS.md \
-              || { echo "::error::release $GITHUB_REF_NAME has no KEYS.md, and an immutable release can't be given one. Release by pushing the tag."; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG is already published."
           else
-            gh release create "$GITHUB_REF_NAME" KEYS.md --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+            gh release create "$TAG" KEYS.md --title "$TAG" --generate-notes --verify-tag
           fi
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx KEYS.md \
+            || { echo "::error::release $TAG has no KEYS.md, and an immutable release can't be given one. Release from Actions -> Release -> Run workflow."; exit 1; }
       - name: Move the major tag
         run: |
-          major="${GITHUB_REF_NAME%%.*}"
+          major="${TAG%%.*}"
           git tag -f "$major" "$GITHUB_SHA"
           git push -f origin "refs/tags/$major"
