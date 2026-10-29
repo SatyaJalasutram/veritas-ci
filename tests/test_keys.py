@@ -23,6 +23,22 @@ class KeysFileTest(unittest.TestCase):
         for line in entries():
             self.assertRegex(line, LINE)
 
+    def test_the_keys_section_lists_at_least_one_key_once_staging_has_one(self):
+        # entries() only counts lines starting with the exact two characters
+        # "- " (so does backend/app/execute/keytrust.py's own parser): a key
+        # line indented by even one space is silently excluded from both,
+        # not flagged. Every test above iterates `entries()` and passes
+        # vacuously on an empty list, so a mis-indented line was invisible
+        # here too (found 29 Oct: KEYS.md's first staging-v1 line had 3
+        # leading spaces from a GitHub web edit; `keypins sync` kept
+        # printing "pins: none" with no error, through two releases, until
+        # caught by hand against the real deploy). Once this file has ever
+        # listed a key (the one-line marker below is gone), entries() must
+        # be non-empty, or a line like it is sitting there unindexed.
+        if "No key is listed yet" not in KEYS.read_text():
+            self.assertTrue(entries(), "KEYS.md has a '## Keys' section with no placeholder line, "
+                             "but entries() found none — a key line is likely mis-indented")
+
     def test_every_staging_key_is_marked_as_never_signing_customer_evidence(self):
         for line in entries():
             match = LINE.match(line)
