@@ -37,7 +37,12 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest (found 29 Oct, PR #7/#8): that label moved to
+    # Ubuntu 26.04 on 19 Oct 2026, which dropped Python 3.9 for
+    # actions/setup-python. This job only asks for 3.11, which 26.04 still
+    # has, but it's pinned anyway for the same reason test.yml now is: a
+    # runner migration shouldn't silently change what a release job runs on.
+    runs-on: ubuntu-24.04
     env:
       # The input only ever reaches a script through this variable, never
       # pasted into one.
