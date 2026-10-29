@@ -9,7 +9,12 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label moved to Ubuntu 26.04 on 19 Oct
+    # 2026, which has no Python 3.9 build for actions/setup-python (found
+    # 29 Oct, PR #7: "The version '3.9' ... was not found for Ubuntu
+    # 26.04"). Ubuntu 24.04 still has it; the Veritas image itself pins the
+    # same way ("ship what you test").
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python: ['3.9', '3.11', '3.13']
