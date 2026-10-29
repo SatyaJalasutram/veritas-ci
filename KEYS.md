@@ -34,5 +34,4 @@ A key is never removed from this file: reports it signed stay checkable.
 
 ## Keys
 
-No key is listed yet: the first is added after the Phase 1 upgrade, when
-staging's key service holds the evidence key.
+   - `staging-v1`: `sha256:dc5a5628f2a6630701f08eebeb5372dfe81f5e5f86fab08a8af6d8a1e8d9252a` (staging, since 2026-10-29; staging: never used for customer evidence)
