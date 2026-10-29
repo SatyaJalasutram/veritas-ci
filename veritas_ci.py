@@ -28,7 +28,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 EXIT_PASS, EXIT_FAIL, EXIT_ERROR = 0, 1, 2
 # Every request has a timeout; a hung connection never hangs the pipeline.
